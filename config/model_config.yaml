@@ -1,0 +1,30 @@
+# 模型配置文件
+# 影视人脸识别自动化系统
+
+# 人脸检测模型
+detector:
+  model_name: "retinaface_r50_v1"
+  backend: "onnx"
+  input_size: [640, 640]
+  confidence_threshold: 0.9
+  nms_threshold: 0.4
+
+# 人脸特征提取模型
+embedder:
+  model_name: "arcface_r100_v1"
+  backend: "onnx"
+  input_size: [112, 112]
+  output_dim: 512
+
+# 运行时配置
+runtime:
+  device: "cuda"  # cuda, cpu, tensorrt
+  num_threads: 4
+  batch_size: 1
+
+# 质量评估配置
+quality_assessment:
+  blur_threshold: 100
+  brightness_min: 20
+  brightness_max: 220
+  pose_threshold: 45  # 度

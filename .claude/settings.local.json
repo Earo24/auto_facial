@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Skill(ui-ux-pro-max:ui-ux-pro-max)",
+      "Bash(python3:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run dev)",
+      "Skill(document-skills:webapp-testing)",
+      "Bash(python:*)",
+      "Bash(ls:*)",
+      "Bash(pip install:*)",
+      "Bash(curl:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(lsof:*)",
+      "Bash(VIDEO_PATH=\"../movies/太平年_1.mp4\")",
+      "Bash(VIDEO_PATH=\"movies/太平年_1.mp4\":*)",
+      "Bash(ps:*)",
+      "Bash(top:*)",
+      "Bash(system_profiler:*)",
+      "Bash(pkill:*)",
+      "Bash(__NEW_LINE_16e809f3faeda761__ echo \"已清理旧数据，准备重新处理\")",
+      "Bash(kill:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
