@@ -90,8 +90,8 @@ export const api = {
   async getVideos(): Promise<VideoInfo[]> {
     const res = await fetch(`${API_BASE_URL}/videos`);
     const data = await res.json();
-    // API返回 {error: ..., videos: [...]} 格式
-    return data.videos || [];
+    // API直接返回数组
+    return data || [];
   },
 
   async uploadVideo(file: File, seriesId?: string): Promise<{ video_id: string; status: string }> {
