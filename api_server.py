@@ -120,7 +120,15 @@ async def get_videos():
     """获取所有视频列表"""
     try:
         with database.get_connection() as conn:
-            videos = conn.execute("SELECT * FROM videos ORDER BY created_at DESC").fetchall()
+            videos = conn.execute("""
+                SELECT
+                    v.*,
+                    s.name as series_name,
+                    s.year as series_year
+                FROM videos v
+                LEFT JOIN tv_series s ON v.series_id = s.series_id
+                ORDER BY v.created_at DESC
+            """).fetchall()
 
         result = []
         for v in videos:
@@ -131,11 +139,28 @@ async def get_videos():
                 'processed_frames': v['processed_frames'],
                 'detected_faces': v['detected_faces'],
                 'characters_found': v['characters_found'],
+                'series_id': v['series_id'],
+                'series_name': v['series_name'],
+                'series_year': v['series_year'],
                 'created_at': str(v['created_at']) if v['created_at'] else None,
             })
         return result
     except Exception as e:
         return {'error': str(e), 'videos': []}
+
+
+@app.put("/api/videos/{video_id}/series")
+async def update_video_series_api(video_id: str, request: Dict[str, Any]):
+    """更新视频所属电视剧"""
+    try:
+        series_id = request.get('series_id')
+        success = database.update_video_series(video_id, series_id)
+        if success:
+            return {'success': True, 'message': '视频关联已更新'}
+        else:
+            return {'success': False, 'error': '视频不存在'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
 
 
 @app.post("/api/videos/upload")
@@ -882,6 +907,149 @@ async def remove_series_actor(series_id: str, actor_id: str):
         return {'success': False, 'error': str(e)}
 
 
+@app.get("/api/series/{series_id}/characters")
+async def get_series_characters(series_id: str):
+    """获取电视剧的角色统计信息（聚合所有视频的标注结果）"""
+    try:
+        with database.get_connection() as conn:
+            # 获取剧集信息
+            series = conn.execute("SELECT * FROM tv_series WHERE series_id = ?", (series_id,)).fetchone()
+            if not series:
+                raise HTTPException(status_code=404, detail="剧集不存在")
+
+            # 获取剧集的演员列表
+            actors = conn.execute("""
+                SELECT sa.*, a.name as actor_name, a.photo_path
+                FROM series_actors sa
+                LEFT JOIN actors a ON sa.actor_id = a.actor_id
+                WHERE sa.series_id = ?
+                ORDER BY sa.role_order, sa.id
+            """, (series_id,)).fetchall()
+
+            # 获取该剧集的所有视频
+            videos = conn.execute("SELECT video_id, filename FROM videos WHERE series_id = ?", (series_id,)).fetchall()
+
+            video_ids = [v['video_id'] for v in videos]
+
+            # 为每个演员统计样本信息
+            result = []
+            for actor in actors:
+                actor_id = actor['actor_id']
+
+                # 统计该演员在该剧所有视频中的样本数
+                if video_ids:
+                    placeholders = ','.join(['?' for _ in video_ids])
+                    sample_stats = conn.execute(f"""
+                        SELECT
+                            COUNT(*) as total_samples,
+                            COUNT(DISTINCT video_id) as videos_appeared,
+                            MIN(timestamp) as first_appearance,
+                            MAX(timestamp) as last_appearance
+                        FROM face_samples
+                        WHERE video_id IN ({placeholders})
+                        AND character_id = ?
+                    """, video_ids + [actor_id]).fetchone()
+                else:
+                    sample_stats = {'total_samples': 0, 'videos_appeared': 0, 'first_appearance': None, 'last_appearance': None}
+
+                result.append({
+                    'actor_id': actor_id,
+                    'actor_name': actor['actor_name'],
+                    'photo_path': actor['photo_path'],
+                    'character_name': actor['character_name'],
+                    'role_order': actor['role_order'],
+                    'is_main_character': bool(actor['is_main_character']),
+                    'total_samples': sample_stats['total_samples'] if sample_stats else 0,
+                    'videos_appeared': sample_stats['videos_appeared'] if sample_stats else 0,
+                    'first_appearance': float(sample_stats['first_appearance']) if sample_stats and sample_stats['first_appearance'] else None,
+                    'last_appearance': float(sample_stats['last_appearance']) if sample_stats and sample_stats['last_appearance'] else None,
+                })
+
+            return {
+                'series_id': series_id,
+                'series_name': series['name'],
+                'series_year': series['year'],
+                'description': series['description'],
+                'total_actors': len(result),
+                'total_videos': len(videos),
+                'characters': result
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {'error': str(e), 'characters': []}
+
+
+@app.get("/api/series/{series_id}/faces")
+async def get_series_face_samples(series_id: str, actor_id: str = None, limit: int = 100):
+    """获取剧集的人脸样本（按演员聚合）"""
+    try:
+        with database.get_connection() as conn:
+            # 获取该剧集的所有视频
+            videos = conn.execute("SELECT video_id, filename FROM videos WHERE series_id = ?", (series_id,)).fetchall()
+            video_ids = [v['video_id'] for v in videos]
+
+            if not video_ids:
+                return {'samples': [], 'error': '该剧集暂无视频'}
+
+            placeholders = ','.join(['?' for _ in video_ids])
+
+            # 构建查询条件
+            where_clause = f"WHERE fs.video_id IN ({placeholders})"
+            params = video_ids[:]
+
+            if actor_id:
+                where_clause += " AND fs.character_id = ?"
+                params.append(actor_id)
+
+            # 添加限制
+            params.append(limit)
+
+            # 查询人脸样本
+            samples = conn.execute(f"""
+                SELECT
+                    fs.sample_id,
+                    fs.video_id as video_id,
+                    fs.character_id,
+                    fs.image_path,
+                    fs.timestamp,
+                    fs.frame_number,
+                    fs.quality_score,
+                    v.filename as video_filename
+                FROM face_samples fs
+                LEFT JOIN videos v ON fs.video_id = v.video_id
+                {where_clause}
+                ORDER BY fs.quality_score DESC
+                LIMIT ?
+            """, params).fetchall()
+
+            result = []
+            for sample in samples:
+                # 转换图片路径为相对路径供API访问
+                image_path = sample['image_path']
+                if image_path:
+                    # 提取相对路径用于API
+                    rel_path = image_path.split('/processed/faces/')[-1] if '/processed/faces/' in image_path else image_path
+                    api_path = f"/api/face_images/{rel_path}"
+                else:
+                    api_path = None
+
+                result.append({
+                    'sample_id': sample['sample_id'],
+                    'video_id': sample['video_id'],
+                    'video_filename': sample['video_filename'],
+                    'character_id': sample['character_id'],
+                    'image_path': api_path,
+                    'timestamp': float(sample['timestamp']) if sample['timestamp'] else None,
+                    'frame_number': sample['frame_number'],
+                    'quality_score': sample['quality_score'],
+                })
+
+            return {'samples': result}
+    except Exception as e:
+        return {'samples': [], 'error': str(e)}
+
+
 # ========== 演员管理 API ==========
 
 @app.get("/api/actors")
@@ -977,13 +1145,13 @@ async def get_actor_photo(filename: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ========== 静态文件 API ==========
-
-@app.get("/api/face_images/{video_id}/{filename}")
-async def get_face_image(video_id: str, filename: str):
-    """获取人脸图片"""
+@app.get("/api/face_images/{path:path}")
+async def get_face_image(path: str):
+    """获取人脸样本图片"""
     try:
-        image_path = DATA_ROOT / "processed" / "faces" / video_id / filename
+        # 路径格式: video_name/frame_xxx_face_y.jpg
+        faces_dir = DATA_ROOT / "processed" / "faces"
+        image_path = faces_dir / path
         if not image_path.exists():
             raise HTTPException(status_code=404, detail="图片不存在")
         return FileResponse(str(image_path), media_type="image/jpeg")
@@ -991,6 +1159,151 @@ async def get_face_image(video_id: str, filename: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/series/{series_id}/recluster")
+async def recluster_series(series_id: str, request: Dict[str, Any]):
+    """重新匹配剧集的人脸聚类到演员"""
+    try:
+        import numpy as np
+        from src.core.face_embedder import FaceEmbedder
+
+        video_id = request.get('video_id')
+        if not video_id:
+            return {'success': False, 'error': '需要指定 video_id'}
+
+        with database.get_connection() as conn:
+            # 1. 获取剧集的所有演员
+            actors = conn.execute("""
+                SELECT sa.*, a.name as actor_name, a.embedding as actor_embedding
+                FROM series_actors sa
+                LEFT JOIN actors a ON sa.actor_id = a.actor_id
+                WHERE sa.series_id = ?
+                ORDER BY sa.role_order, sa.id
+            """, (series_id,)).fetchall()
+
+            valid_actors = []
+            for actor in actors:
+                if actor['actor_embedding']:
+                    try:
+                        import pickle
+                        actor_emb = pickle.loads(actor['actor_embedding'])
+                        actor['actor_embedding'] = actor_emb
+                        valid_actors.append(actor)
+                    except Exception as e:
+                        print(f"Warning: Failed to load embedding for actor {actor['actor_name']}: {e}")
+                        continue
+
+            if not valid_actors:
+                return {'success': False, 'error': '该剧集没有演员特征数据，请先上传演员照片'}
+
+            # 2. 获取视频的所有聚类结果
+            samples = conn.execute("""
+                SELECT sample_id, cluster_id, embedding, quality_score
+                FROM face_samples
+                WHERE video_id = ? AND cluster_id IS NOT NULL AND embedding IS NOT NULL
+                ORDER BY cluster_id, quality_score DESC
+            """, (video_id,)).fetchall()
+
+            if not samples:
+                return {'success': False, 'error': '该视频没有聚类结果'}
+
+            # 3. 按簇分组
+            clusters = {}
+            for sample in samples:
+                cluster_id = sample['cluster_id']
+                if cluster_id not in clusters:
+                    clusters[cluster_id] = []
+                clusters[cluster_id].append(sample)
+
+            # 4. 匹配每个簇到演员
+            results = []
+            matched_actor_ids = set()
+
+            for cluster_id in sorted(clusters.keys()):
+                cluster_samples = clusters[cluster_id]
+
+                # 计算簇的平均embedding（使用高质量样本）
+                sorted_samples = sorted(cluster_samples, key=lambda s: s['quality_score'], reverse=True)
+                top_n = max(5, len(sorted_samples) // 2)
+                top_samples = sorted_samples[:top_n]
+
+                embeddings = []
+                for s in top_samples:
+                    emb = s['embedding']
+                    if emb:
+                        import pickle
+                        embeddings.append(pickle.loads(emb))
+
+                if not embeddings:
+                    continue
+
+                cluster_embedding = np.mean(embeddings, axis=0)
+
+                # 匹配演员
+                best_match = None
+                best_similarity = 0
+
+                for actor in valid_actors:
+                    actor_emb = actor['actor_embedding']
+
+                    # 计算余弦相似度
+                    dot = np.dot(cluster_embedding, actor_emb)
+                    norm_cluster = np.linalg.norm(cluster_embedding)
+                    norm_actor = np.linalg.norm(actor_emb)
+
+                    if norm_cluster == 0 or norm_actor == 0:
+                        similarity = 0
+                    else:
+                        similarity = float(dot / (norm_cluster * norm_actor))
+
+                    if similarity >= 0.45 and similarity > best_similarity and actor['actor_id'] not in matched_actor_ids:
+                        best_similarity = similarity
+                        best_match = actor
+
+                # 保存匹配结果
+                if best_match:
+                    matched_actor_ids.add(best_match['actor_id'])
+
+                    # 更新所有样本的character_id
+                    character_id = best_match['actor_id']
+                    for sample in cluster_samples:
+                        conn.execute("""
+                            UPDATE face_samples
+                            SET character_id = ?
+                            WHERE sample_id = ?
+                        """, (character_id, sample['sample_id']))
+
+                    results.append({
+                        'cluster_id': cluster_id,
+                        'actor_id': best_match['actor_id'],
+                        'actor_name': best_match['actor_name'],
+                        'character_name': best_match['character_name'],
+                        'sample_count': len(cluster_samples),
+                        'similarity': best_similarity
+                    })
+
+            # 更新characters_found统计
+            conn.execute("""
+                UPDATE videos
+                SET characters_found = ?
+                WHERE video_id = ?
+            """, (len(matched_actor_ids), video_id))
+
+            return {
+                'success': True,
+                'matched_clusters': len(results),
+                'total_clusters': len(clusters),
+                'results': results
+            }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+# ========== 静态文件 API ==========
 
 
 if __name__ == "__main__":

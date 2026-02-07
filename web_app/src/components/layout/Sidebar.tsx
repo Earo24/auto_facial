@@ -3,8 +3,7 @@ import {
   Home,
   Upload,
   Users,
-  Search,
-  BarChart3,
+  Film,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -16,10 +15,9 @@ import { cn } from '@/lib/utils'
 const navigation = [
   { name: '仪表板', href: '/', icon: Home },
   { name: '剧集管理', href: '/series', icon: Clapperboard },
+  { name: '视频列表', href: '/videos', icon: Film },
   { name: '视频处理', href: '/processing', icon: Upload },
   { name: '聚类标注', href: '/clustering', icon: Users },
-  { name: '识别结果', href: '/recognition', icon: Search },
-  { name: '分析报告', href: '/analysis', icon: BarChart3 },
   { name: '系统设置', href: '/settings', icon: Settings },
 ]
 
@@ -39,9 +37,9 @@ export function Sidebar() {
         {!collapsed && (
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600">
-              <span className="text-lg font-bold">人脸</span>
+              <span className="text-lg font-bold">AF</span>
             </div>
-            <span className="text-lg font-semibold">人脸识别系统</span>
+            <span className="text-lg font-semibold">AutoFacial</span>
           </div>
         )}
         <button

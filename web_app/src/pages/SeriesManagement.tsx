@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { Users, Film } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -23,6 +25,14 @@ interface SeriesActor {
   is_main_character: boolean;
 }
 
+interface SeriesVideo {
+  video_id: string;
+  filename: string;
+  duration: number;
+  detected_faces: number;
+  processed_frames: number;
+}
+
 export default function SeriesManagement() {
   const [series, setSeries] = useState<Series[]>([]);
   const [selectedSeries, setSelectedSeries] = useState<Series | null>(null);
@@ -30,6 +40,7 @@ export default function SeriesManagement() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showActorDialog, setShowActorDialog] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [seriesVideos, setSeriesVideos] = useState<Record<string, SeriesVideo[]>>({});
 
   // 新增电视剧表单
   const [newSeries, setNewSeries] = useState({
@@ -55,6 +66,28 @@ export default function SeriesManagement() {
       const res = await fetch('http://localhost:8000/api/series');
       const data = await res.json();
       setSeries(data.series || []);
+
+      // 加载所有视频
+      const videosRes = await fetch('http://localhost:8000/api/videos');
+      const videosData = await videosRes.json();
+
+      // 按剧集分组视频
+      const videosBySeries: Record<string, SeriesVideo[]> = {};
+      for (const video of videosData) {
+        if (video.series_id) {
+          if (!videosBySeries[video.series_id]) {
+            videosBySeries[video.series_id] = [];
+          }
+          videosBySeries[video.series_id].push({
+            video_id: video.video_id,
+            filename: video.filename,
+            duration: video.duration,
+            detected_faces: video.detected_faces,
+            processed_frames: video.processed_frames,
+          });
+        }
+      }
+      setSeriesVideos(videosBySeries);
     } catch (error) {
       console.error('加载电视剧失败:', error);
     } finally {
@@ -167,29 +200,84 @@ export default function SeriesManagement() {
                 暂无剧集，点击上方"新增剧集"开始配置
               </Card>
             ) : (
-              series.map(s => (
-                <Card
-                  key={s.series_id}
-                  onClick={() => handleSelectSeries(s)}
-                  className={`p-4 cursor-pointer transition-all duration-200 hover:bg-background-300 hover:shadow-lg ${
-                    selectedSeries?.series_id === s.series_id
-                      ? 'bg-primary-600/20 border-2 border-primary-500'
-                      : 'border border-background-500'
-                  }`}
-                >
-                  <h3 className={`font-semibold ${selectedSeries?.series_id === s.series_id ? 'text-white' : 'text-gray-100'}`}>
-                    {s.name}
-                  </h3>
-                  <p className={`text-sm mt-1 ${selectedSeries?.series_id === s.series_id ? 'text-purple-200' : 'text-gray-400'}`}>
-                    {s.year}年
-                  </p>
-                  {s.description && (
-                    <p className={`text-sm mt-2 line-clamp-2 ${selectedSeries?.series_id === s.series_id ? 'text-purple-200' : 'text-gray-500'}`}>
-                      {s.description}
-                    </p>
-                  )}
-                </Card>
-              ))
+              series.map(s => {
+                const videos = seriesVideos[s.series_id] || [];
+                return (
+                  <Card
+                    key={s.series_id}
+                    onClick={() => handleSelectSeries(s)}
+                    className={`p-4 cursor-pointer transition-all duration-200 hover:bg-background-300 hover:shadow-lg ${
+                      selectedSeries?.series_id === s.series_id
+                        ? 'bg-primary-600/20 border-2 border-primary-500'
+                        : 'border border-background-500'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h3 className={`font-semibold ${selectedSeries?.series_id === s.series_id ? 'text-white' : 'text-gray-100'}`}>
+                          {s.name}
+                        </h3>
+                        <p className={`text-sm mt-1 ${selectedSeries?.series_id === s.series_id ? 'text-purple-200' : 'text-gray-400'}`}>
+                          {s.year}年
+                        </p>
+                        {s.description && (
+                          <p className={`text-sm mt-2 line-clamp-2 ${selectedSeries?.series_id === s.series_id ? 'text-purple-200' : 'text-gray-500'}`}>
+                            {s.description}
+                          </p>
+                        )}
+                      </div>
+                      {videos.length > 0 && (
+                        <div className={`flex items-center gap-1 px-2 py-1 rounded-lg ${selectedSeries?.series_id === s.series_id ? 'bg-primary-600/30' : 'bg-background-300'}`}>
+                          <Film size={14} className={selectedSeries?.series_id === s.series_id ? 'text-primary-300' : 'text-gray-400'} />
+                          <span className={`text-sm font-medium ${selectedSeries?.series_id === s.series_id ? 'text-primary-300' : 'text-gray-400'}`}>
+                            {videos.length}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 显示关联的视频 */}
+                    {videos.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-background-500/50">
+                        <p className={`text-xs mb-2 ${selectedSeries?.series_id === s.series_id ? 'text-purple-200' : 'text-gray-500'}`}>关联视频:</p>
+                        <div className="space-y-1.5">
+                          {videos.slice(0, 3).map(video => (
+                            <div key={video.video_id} className="flex items-center gap-2 text-xs">
+                              <Film size={12} className={selectedSeries?.series_id === s.series_id ? 'text-purple-300' : 'text-gray-500'} />
+                              <span className={selectedSeries?.series_id === s.series_id ? 'text-purple-100' : 'text-gray-400'}>
+                                {video.filename}
+                              </span>
+                              {video.detected_faces > 0 && (
+                                <span className={`ml-auto px-1.5 py-0.5 rounded text-xs ${
+                                  selectedSeries?.series_id === s.series_id
+                                    ? 'bg-green-600/30 text-green-300'
+                                    : 'bg-green-600/20 text-green-400'
+                                }`}>
+                                  {video.detected_faces}人脸
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                          {videos.length > 3 && (
+                            <p className={`text-xs ${selectedSeries?.series_id === s.series_id ? 'text-purple-200' : 'text-gray-500'}`}>
+                              还有 {videos.length - 3} 个视频...
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className={`mt-3 pt-3 border-t border-background-500/50 flex gap-2 ${videos.length > 0 ? '' : 'border-t-0'}`}>
+                      <Link to={`/series/${s.series_id}/characters`}>
+                        <Button variant="ghost" size="sm" className="gap-1">
+                          <Users size={16} />
+                          查看角色
+                        </Button>
+                      </Link>
+                    </div>
+                  </Card>
+                );
+              })
             )}
           </div>
         </div>

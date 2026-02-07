@@ -113,7 +113,7 @@ export default function Dashboard() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>最近视频</CardTitle>
-                <Link to="/processing">
+                <Link to="/videos">
                   <Button variant="ghost" size="sm" className="gap-2">
                     查看全部
                     <ArrowRight size={16} />
@@ -215,26 +215,14 @@ export default function Dashboard() {
                   </div>
                 </Link>
 
-                <Link to="/recognition" className="block">
+                <Link to="/series" className="block">
                   <div className="flex items-center gap-4 rounded-lg bg-background-100 p-4 border border-background-400 hover:border-primary-500/50 hover:bg-background-300 transition-all cursor-pointer">
-                    <div className="rounded-lg bg-yellow-600/20 p-3">
-                      <Search className="text-yellow-400" size={20} />
+                    <div className="rounded-lg bg-blue-600/20 p-3">
+                      <Play className="text-blue-400" size={20} />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-100">批量识别</p>
-                      <p className="text-sm text-gray-500">运行识别</p>
-                    </div>
-                  </div>
-                </Link>
-
-                <Link to="/analysis" className="block">
-                  <div className="flex items-center gap-4 rounded-lg bg-background-100 p-4 border border-background-400 hover:border-primary-500/50 hover:bg-background-300 transition-all cursor-pointer">
-                    <div className="rounded-lg bg-purple-600/20 p-3">
-                      <BarChart3 className="text-purple-400" size={20} />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-100">分析报告</p>
-                      <p className="text-sm text-gray-500">查看统计</p>
+                      <p className="font-medium text-gray-100">剧集管理</p>
+                      <p className="text-sm text-gray-500">配置演员</p>
                     </div>
                   </div>
                 </Link>

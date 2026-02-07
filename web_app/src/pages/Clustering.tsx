@@ -44,11 +44,26 @@ export default function Clustering() {
   const [currentVideo, setCurrentVideo] = useState<VideoInfo | null>(null)
   const [clusteringInProgress, setClusteringInProgress] = useState(false)
   const [actors, setActors] = useState<SeriesActors>({})
+  const [allVideos, setAllVideos] = useState<VideoInfo[]>([])
 
-  // 加载演员信息
+  // 加载演员信息和视频列表
   useEffect(() => {
     loadActors()
+    loadVideosList()
   }, [])
+
+  const loadVideosList = async () => {
+    try {
+      const videos = await api.getVideos()
+      setAllVideos(videos)
+    } catch (error) {
+      console.error('加载视频列表失败:', error)
+    }
+  }
+
+  const handleVideoChange = (newVideoId: string) => {
+    navigate(`/clustering?video=${newVideoId}`, { replace: true })
+  }
 
   const loadActors = async () => {
     try {
@@ -253,22 +268,41 @@ export default function Clustering() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-100">聚类标注</h1>
-          <p className="text-gray-400">
-            {currentVideo ? `当前视频: ${currentVideo.filename}` : '审核自动聚类结果，为角色命名'}
-          </p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-100">聚类标注</h1>
+            <p className="text-gray-400">
+              {currentVideo ? `当前视频: ${currentVideo.filename}` : '审核自动聚类结果，为角色命名'}
+            </p>
+          </div>
+          {/* 视频选择器 */}
+          {allVideos.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-400">选择视频:</label>
+              <select
+                value={currentVideo?.video_id || ''}
+                onChange={(e) => handleVideoChange(e.target.value)}
+                className="bg-background-500 border border-background-500 rounded-lg px-3 py-2 text-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-transparent min-w-[200px]"
+              >
+                {allVideos.map((video) => (
+                  <option key={video.video_id} value={video.video_id}>
+                    {video.filename} ({video.detected_faces}人脸)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          {currentVideo && clusters.length === 0 && (
+          {currentVideo && (
             <Button
-              variant="primary"
+              variant={clusters.length === 0 ? "primary" : "outline"}
               onClick={handleClusterFaces}
               disabled={clusteringInProgress}
               className="gap-2"
             >
               <RefreshCw size={18} className={clusteringInProgress ? 'animate-spin' : ''} />
-              {clusteringInProgress ? '聚类中...' : '开始聚类'}
+              {clusteringInProgress ? '聚类中...' : clusters.length === 0 ? '开始聚类' : '重新聚类'}
             </Button>
           )}
           {mergeMode ? (
@@ -320,12 +354,9 @@ export default function Clustering() {
           <CardContent className="p-12 text-center">
             <AlertCircle className="mx-auto h-16 w-16 text-gray-600 mb-4" />
             <p className="text-lg font-medium text-gray-300 mb-2">暂无聚类数据</p>
-            <p className="text-sm text-gray-500 mb-4">
-              该视频尚未进行人脸聚类，点击上方按钮开始聚类
+            <p className="text-sm text-gray-500">
+              该视频尚未进行人脸聚类，点击右上角"开始聚类"按钮
             </p>
-            <Button variant="primary" onClick={handleClusterFaces} disabled={clusteringInProgress}>
-              开始聚类
-            </Button>
           </CardContent>
         </CardLG>
       )}

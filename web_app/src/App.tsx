@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from './components/layout/Layout'
 import Dashboard from './pages/Dashboard'
 import SeriesManagement from './pages/SeriesManagement'
+import SeriesCharacters from './pages/SeriesCharacters'
+import Videos from './pages/Videos'
 import Processing from './pages/Processing'
 import Clustering from './pages/Clustering'
 import Recognition from './pages/Recognition'
@@ -15,6 +17,8 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="series" element={<SeriesManagement />} />
+          <Route path="series/:seriesId/characters" element={<SeriesCharacters />} />
+          <Route path="videos" element={<Videos />} />
           <Route path="processing" element={<Processing />} />
           <Route path="clustering" element={<Clustering />} />
           <Route path="recognition" element={<Recognition />} />

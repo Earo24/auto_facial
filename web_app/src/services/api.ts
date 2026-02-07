@@ -11,6 +11,9 @@ export interface VideoInfo {
   processed_frames: number;
   detected_faces: number;
   characters_found: number;
+  series_id?: string;
+  series_name?: string;
+  series_year?: number;
   created_at: string;
 }
 
