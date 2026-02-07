@@ -29,7 +29,9 @@
       "Bash(sqlite3:*)",
       "Bash(sort:*)",
       "Bash(npm run build:*)",
-      "Bash(xargs kill:*)"
+      "Bash(xargs kill:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

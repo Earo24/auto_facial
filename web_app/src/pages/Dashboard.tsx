@@ -33,6 +33,7 @@ export default function Dashboard() {
       setVideos(data)
     } catch (error) {
       console.error('加载视频失败:', error)
+      setVideos([]) // 确保出错时设置为空数组
     } finally {
       setLoading(false)
     }
