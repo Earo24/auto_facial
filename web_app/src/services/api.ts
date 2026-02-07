@@ -105,7 +105,16 @@ export const api = {
       method: 'POST',
       body: formData,
     });
-    return res.json();
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    return data;
   },
 
   async getVideoStatus(videoId: string): Promise<ProcessingStatus> {

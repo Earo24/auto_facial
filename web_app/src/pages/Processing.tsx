@@ -91,14 +91,20 @@ export default function Processing() {
 
         try {
           const result = await api.uploadVideo(file, selectedSeries || undefined)
+
+          // 检查是否有错误
+          if (!result || !result.video_id) {
+            throw new Error(result?.error || '上传失败，未返回视频ID')
+          }
+
           newFile.videoId = result.video_id
           newFile.status = 'processing'
 
           // 轮询状态
           pollStatus(result.video_id, newFile.id)
-        } catch (error) {
+        } catch (error: any) {
           newFile.status = 'error'
-          newFile.error = '上传失败'
+          newFile.error = error?.message || '上传失败'
           setFiles((prev) => [...prev])
         }
       }
