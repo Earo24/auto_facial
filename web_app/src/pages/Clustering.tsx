@@ -157,6 +157,23 @@ export default function Clustering() {
       await api.clusterFaces(currentVideo.video_id, 2)
       // 重新加载聚类数据
       await loadClusters(currentVideo.video_id)
+
+      // 如果视频属于某个剧集，自动匹配演员
+      if (currentVideo.series_id) {
+        console.log('开始自动匹配演员...')
+        try {
+          const matchResult = await api.matchActors(currentVideo.series_id, currentVideo.video_id)
+          if (matchResult.success) {
+            console.log(`演员匹配完成: ${matchResult.matched_clusters}/${matchResult.total_clusters} 个簇已匹配`)
+            // 重新加载聚类数据以显示匹配结果
+            await loadClusters(currentVideo.video_id)
+          } else {
+            console.warn('演员匹配失败:', matchResult.error)
+          }
+        } catch (error) {
+          console.error('演员匹配出错:', error)
+        }
+      }
     } catch (error) {
       console.error('聚类失败:', error)
     } finally {

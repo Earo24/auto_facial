@@ -1201,10 +1201,12 @@ async def recluster_series(series_id: str, request: Dict[str, Any]):
             for actor in actors:
                 if actor['actor_embedding']:
                     try:
-                        import pickle
-                        actor_emb = pickle.loads(actor['actor_embedding'])
-                        actor['actor_embedding'] = actor_emb
-                        valid_actors.append(actor)
+                        import numpy as np
+                        actor_emb = np.frombuffer(actor['actor_embedding'], dtype=np.float32)
+                        # 将Row对象转换为字典并添加embedding
+                        actor_dict = dict(actor)
+                        actor_dict['actor_embedding'] = actor_emb
+                        valid_actors.append(actor_dict)
                     except Exception as e:
                         print(f"Warning: Failed to load embedding for actor {actor['actor_name']}: {e}")
                         continue
@@ -1247,8 +1249,8 @@ async def recluster_series(series_id: str, request: Dict[str, Any]):
                 for s in top_samples:
                     emb = s['embedding']
                     if emb:
-                        import pickle
-                        embeddings.append(pickle.loads(emb))
+                        import numpy as np
+                        embeddings.append(np.frombuffer(emb, dtype=np.float32))
 
                 if not embeddings:
                     continue

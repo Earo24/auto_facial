@@ -227,4 +227,26 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/series`);
     return res.json();
   },
+
+  async matchActors(seriesId: string, videoId: string): Promise<{
+    success: boolean;
+    matched_clusters: number;
+    total_clusters: number;
+    results: Array<{
+      cluster_id: number;
+      sample_count: number;
+      actor_id: string | null;
+      actor_name: string | null;
+      character_name: string | null;
+      similarity: number;
+    }>;
+    error?: string;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/series/${seriesId}/recluster`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_id: videoId }),
+    });
+    return res.json();
+  },
 };
