@@ -1145,6 +1145,21 @@ async def get_actor_photo(filename: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/processed/faces/{video_id}/{filename}")
+async def get_face_sample_photo(video_id: str, filename: str):
+    """获取人脸样本照片"""
+    try:
+        faces_dir = DATA_ROOT / "processed" / "faces" / video_id
+        image_path = faces_dir / filename
+        if not image_path.exists():
+            raise HTTPException(status_code=404, detail="照片不存在")
+        return FileResponse(str(image_path), media_type="image/jpeg")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/face_images/{path:path}")
 async def get_face_image(path: str):
     """获取人脸样本图片"""
