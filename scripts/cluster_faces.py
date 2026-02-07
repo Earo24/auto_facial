@@ -63,6 +63,9 @@ def cluster_faces(video_id: str, min_cluster_size: int = 5):
 
     # 保存聚类结果到数据库
     print("\n保存聚类结果...")
+    # 先清除该视频的所有旧聚类结果
+    database.clear_video_clusters(video_id)
+    # 然后保存新的聚类结果
     for sample in valid_samples:
         if sample.cluster_id is not None:
             database.update_sample_cluster(sample.sample_id, sample.cluster_id)

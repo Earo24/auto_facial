@@ -39,12 +39,12 @@ FACE_DETECTION_CONFIG = {
     'dedup_threshold': 0.95,         # 去重相似度阈值
 }
 
-# 聚类配置
+# 聚类配置（影视剧业界经验优化版本，提高召回率）
 CLUSTERING_CONFIG = {
-    'eps': 0.5,                     # DBSCAN距离阈值（增大以发现更多簇，对应相似度约87%）
+    'eps': 0.80,                    # DBSCAN距离阈值（逐步提高）
     'min_samples': 2,               # 最小簇大小
-    'merge_threshold': 0.75,        # 小簇合并阈值（降低以合并更多相似簇）
-    'max_clusters': 50,             # 最大簇数量
+    'merge_threshold': 0.52,        # 小簇合并阈值
+    'max_clusters': 150,            # 最大簇数量
 }
 
 # 识别配置
