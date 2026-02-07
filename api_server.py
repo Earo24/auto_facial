@@ -11,6 +11,14 @@ import shutil
 from pathlib import Path
 import sys
 import threading
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -55,6 +63,17 @@ processing_tasks: Dict[str, Dict[str, Any]] = {}
 class ClusterNameRequest(BaseModel):
     video_id: str
     name: str
+
+
+class MergeClustersRequest(BaseModel):
+    video_id: str
+    source_cluster_id: int
+    target_cluster_id: int
+
+
+class RemoveSampleRequest(BaseModel):
+    video_id: str
+    sample_id: str
 
 
 # 启动时初始化
@@ -120,7 +139,7 @@ async def get_videos():
 
 
 @app.post("/api/videos/upload")
-async def upload_video(file: UploadFile = File(...)):
+async def upload_video(file: UploadFile = File(...), series_id: str = Form(None)):
     """上传视频"""
     # 保存文件
     upload_dir = DATA_ROOT / "raw"
@@ -133,11 +152,19 @@ async def upload_video(file: UploadFile = File(...)):
     # 从文件名获取video_id（去掉扩展名）
     video_id = Path(file.filename).stem
 
+    # 保存到数据库
+    with database.get_connection() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO videos (video_id, file_path, filename, series_id)
+            VALUES (?, ?, ?, ?)
+        """, (video_id, str(file_path), file.filename, series_id))
+
     # 创建处理任务
     processing_tasks[video_id] = {
         'status': 'pending',
         'progress': 0,
         'message': '等待处理',
+        'series_id': series_id,
         'video_id': video_id,
         'file_path': str(file_path),
     }
@@ -372,6 +399,9 @@ def reprocess_faces_task(task_id: str, video_id: str):
 async def cluster_faces(video_id: str, min_cluster_size: int = 5):
     """对视频的人脸进行聚类"""
     try:
+        # 清除之前的聚类结果
+        database.clear_video_clusters(video_id)
+
         samples = database.get_face_samples(video_id)
 
         if not samples:
@@ -516,6 +546,57 @@ async def name_cluster(cluster_id: int, request: ClusterNameRequest):
         database.save_character(character)
 
         return {'success': True, 'character_id': char_id, 'name': request.name}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+@app.post("/api/clusters/merge")
+async def merge_clusters(request: MergeClustersRequest):
+    """合并两个簇"""
+    try:
+        # 获取所有样本
+        samples = database.get_face_samples(request.video_id)
+
+        # 过滤出两个簇的样本
+        source_samples = [s for s in samples if s.cluster_id == request.source_cluster_id]
+        target_samples = [s for s in samples if s.cluster_id == request.target_cluster_id]
+
+        if not source_samples:
+            raise HTTPException(status_code=404, detail=f"源簇 {request.source_cluster_id} 不存在")
+        if not target_samples:
+            raise HTTPException(status_code=404, detail=f"目标簇 {request.target_cluster_id} 不存在")
+
+        # 将源簇的所有样本的cluster_id更新为目标簇的ID
+        for sample in source_samples:
+            database.update_sample_cluster(sample.sample_id, request.target_cluster_id)
+
+        return {
+            'success': True,
+            'message': f"已将簇 {request.source_cluster_id} 合并到簇 {request.target_cluster_id}",
+            'merged_count': len(source_samples),
+            'target_cluster_id': request.target_cluster_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+@app.post("/api/samples/remove")
+async def remove_sample_from_cluster(request: RemoveSampleRequest):
+    """从簇中移除样本（设置cluster_id为NULL）"""
+    try:
+        # 更新样本的cluster_id为NULL
+        database.update_sample_cluster(request.sample_id, None)
+
+        return {
+            'success': True,
+            'message': f"样本 {request.sample_id} 已从簇中移除"
+        }
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -720,6 +801,180 @@ async def get_characters(video_id: str):
         return {'characters': result}
     except Exception as e:
         return {'characters': [], 'error': str(e)}
+
+
+# ========== 电视剧管理 API ==========
+
+@app.get("/api/series")
+async def get_series():
+    """获取所有电视剧列表"""
+    try:
+        series_list = database.get_tv_series()
+        return {'series': series_list}
+    except Exception as e:
+        return {'series': [], 'error': str(e)}
+
+
+@app.post("/api/series")
+async def create_series(request: Dict[str, Any]):
+    """创建电视剧"""
+    try:
+        series_id = request.get('series_id') or f"series_{int(hash(str(request)) % 10000)}"
+        success = database.create_tv_series(
+            series_id=series_id,
+            name=request.get('name', ''),
+            year=request.get('year'),
+            description=request.get('description'),
+            poster_path=request.get('poster_path')
+        )
+        if success:
+            return {'success': True, 'series_id': series_id}
+        return {'success': False, 'error': '创建失败'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+@app.delete("/api/series/{series_id}")
+async def delete_series(series_id: str):
+    """删除电视剧"""
+    try:
+        success = database.delete_tv_series(series_id)
+        return {'success': success}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+@app.get("/api/series/{series_id}/actors")
+async def get_series_actors_api(series_id: str):
+    """获取电视剧的演员列表"""
+    try:
+        actors = database.get_series_actors(series_id)
+        return {'actors': actors}
+    except Exception as e:
+        return {'actors': [], 'error': str(e)}
+
+
+@app.post("/api/series/{series_id}/actors")
+async def add_series_actor(series_id: str, request: Dict[str, Any]):
+    """为电视剧添加演员"""
+    try:
+        success = database.add_series_actor(
+            series_id=series_id,
+            actor_id=request.get('actor_id', ''),
+            character_name=request.get('character_name', ''),
+            role_order=request.get('role_order', 0),
+            is_main_character=request.get('is_main_character', True)
+        )
+        if success:
+            return {'success': True}
+        return {'success': False, 'error': '添加失败'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+@app.delete("/api/series/{series_id}/actors/{actor_id}")
+async def remove_series_actor(series_id: str, actor_id: str):
+    """从电视剧中移除演员"""
+    try:
+        success = database.remove_series_actor(series_id, actor_id)
+        return {'success': success}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+# ========== 演员管理 API ==========
+
+@app.get("/api/actors")
+async def get_actors_api():
+    """获取所有演员列表"""
+    try:
+        actors = database.get_actors()
+        return {'actors': actors}
+    except Exception as e:
+        return {'actors': [], 'error': str(e)}
+
+
+@app.post("/api/actors")
+async def create_actor(request: Dict[str, Any]):
+    """创建演员"""
+    try:
+        actor_id = request.get('actor_id') or f"actor_{int(hash(str(request)) % 10000)}"
+        success = database.create_actor(
+            actor_id=actor_id,
+            name=request.get('name', ''),
+            photo_path=request.get('photo_path')
+        )
+        if success:
+            return {'success': True, 'actor_id': actor_id}
+        return {'success': False, 'error': '创建失败'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+@app.post("/api/actors/{actor_id}/photo")
+async def upload_actor_photo(actor_id: str, file: UploadFile = File(...)):
+    """上传演员照片"""
+    try:
+        # 创建演员照片目录
+        actors_dir = DATA_ROOT / "actors"
+        actors_dir.mkdir(parents=True, exist_ok=True)
+
+        # 保存照片
+        file_ext = Path(file.filename).suffix or '.jpg'
+        photo_path = actors_dir / f"{actor_id}{file_ext}"
+
+        with open(photo_path, 'wb') as f:
+            shutil.copyfileobj(file.file, f)
+
+        # 提取人脸embedding
+        import cv2
+        import numpy as np
+
+        img = cv2.imread(str(photo_path))
+        if img is not None and embedder:
+            faces = detector.detect(img)
+            if faces:
+                embedding = embedder.compute_embedding(img, faces[0])
+                database.update_actor_embedding(actor_id, embedding)
+
+        # 更新演员照片路径
+        import sqlite3
+        with database.get_connection() as conn:
+            conn.execute(
+                "UPDATE actors SET photo_path = ? WHERE actor_id = ?",
+                (str(photo_path), actor_id)
+            )
+
+        return {'success': True, 'photo_path': str(photo_path)}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
+
+
+@app.delete("/api/actors/{actor_id}")
+async def delete_actor(actor_id: str):
+    """删除演员"""
+    try:
+        success = database.delete_actor(actor_id)
+        return {'success': success}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+@app.get("/api/actor_photos/{filename}")
+async def get_actor_photo(filename: str):
+    """获取演员照片"""
+    try:
+        actors_dir = DATA_ROOT / "actor_photos"
+        image_path = actors_dir / filename
+        if not image_path.exists():
+            raise HTTPException(status_code=404, detail="照片不存在")
+        return FileResponse(str(image_path), media_type="image/jpeg")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ========== 静态文件 API ==========

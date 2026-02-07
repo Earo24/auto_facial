@@ -18,6 +18,16 @@ import { Input } from '@/components/ui/Input'
 import { cn } from '@/lib/utils'
 import { api, Cluster, VideoInfo } from '@/services/api'
 
+interface Actor {
+  actor_id: string
+  actor_name: string
+  character_name: string
+}
+
+interface SeriesActors {
+  [actorId: string]: Actor
+}
+
 export default function Clustering() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -29,9 +39,48 @@ export default function Clustering() {
   const [searchQuery, setSearchQuery] = useState('')
   const [mergeMode, setMergeMode] = useState(false)
   const [mergeSource, setMergeSource] = useState<number | null>(null)
+  const [mergeTarget, setMergeTarget] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [currentVideo, setCurrentVideo] = useState<VideoInfo | null>(null)
   const [clusteringInProgress, setClusteringInProgress] = useState(false)
+  const [actors, setActors] = useState<SeriesActors>({})
+
+  // 加载演员信息
+  useEffect(() => {
+    loadActors()
+  }, [])
+
+  const loadActors = async () => {
+    try {
+      // 获取所有电视剧
+      const seriesData = await api.getSeries()
+      const allActors: SeriesActors = {}
+
+      // 为每个电视剧加载演员
+      for (const series of seriesData.series || []) {
+        const actorsData = await fetch(`http://localhost:8000/api/series/${series.series_id}/actors`).then(r => r.json())
+        for (const actor of actorsData.actors || []) {
+          allActors[actor.actor_id] = {
+            actor_id: actor.actor_id,
+            actor_name: actor.actor_name,
+            character_name: actor.character_name
+          }
+        }
+      }
+
+      setActors(allActors)
+    } catch (error) {
+      console.error('加载演员信息失败:', error)
+    }
+  }
+
+  // 获取演员名字
+  const getActorName = (characterId: string | null): string => {
+    if (!characterId) return ''
+    const actor = actors[characterId]
+    if (!actor) return characterId
+    return `${actor.actor_name} 饰 ${actor.character_name}`
+  }
 
   // 加载当前视频信息和聚类数据
   useEffect(() => {
@@ -111,22 +160,83 @@ export default function Clustering() {
     }
   }
 
-  const handleRemoveSample = (clusterId: number, sampleId: string) => {
-    setClusters((prev) =>
-      prev.map((c) =>
-        c.cluster_id === clusterId
-          ? { ...c, samples: c.samples.filter((s) => s.sample_id !== sampleId) }
-          : c
-      )
-    )
+  const handleRemoveSample = async (clusterId: number, sampleId: string) => {
+    if (!currentVideo) return
+
+    try {
+      const result = await api.removeSample(currentVideo.video_id, sampleId)
+      if (result.success) {
+        // 重新加载聚类数据
+        await loadClusters(currentVideo.video_id)
+        console.log(result.message || '样本已移除')
+      } else {
+        alert(`移除失败: ${result.error || '未知错误'}`)
+      }
+    } catch (error) {
+      console.error('移除样本失败:', error)
+      alert('移除样本失败，请重试')
+    }
   }
 
-  // 根据搜索查询过滤簇
-  const filteredClusters = clusters.filter(cluster =>
-    searchQuery === '' ||
-    cluster.cluster_id.toString().includes(searchQuery) ||
-    (cluster.name && cluster.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  )
+  const handleMerge = async () => {
+    if (!currentVideo || mergeSource === null || mergeTarget === null) return
+    if (mergeSource === mergeTarget) {
+      alert('不能将簇合并到自身')
+      return
+    }
+
+    try {
+      const result = await api.mergeClusters(currentVideo.video_id, mergeSource, mergeTarget)
+      if (result.success) {
+        // 重新加载聚类数据
+        await loadClusters(currentVideo.video_id)
+        // 重置合并状态
+        setMergeSource(null)
+        setMergeTarget(null)
+        setMergeMode(false)
+        // 显示成功消息
+        console.log(result.message || '合并成功')
+      } else {
+        alert(`合并失败: ${result.error || '未知错误'}`)
+      }
+    } catch (error) {
+      console.error('合并失败:', error)
+      alert('合并失败，请重试')
+    }
+  }
+
+  const handleClusterClick = (cluster: Cluster) => {
+    if (mergeMode) {
+      if (mergeSource === null) {
+        // 第一步：选择源簇（要被合并的簇）
+        setMergeSource(cluster.cluster_id)
+      } else if (mergeTarget === null) {
+        // 第二步：选择目标簇（合并到的簇）
+        setMergeTarget(cluster.cluster_id)
+      } else {
+        // 已经选择了两个簇，重新开始
+        setMergeSource(cluster.cluster_id)
+        setMergeTarget(null)
+      }
+    } else {
+      setSelectedCluster(cluster)
+    }
+  }
+
+  const resetMergeState = () => {
+    setMergeMode(false)
+    setMergeSource(null)
+    setMergeTarget(null)
+  }
+
+  // 根据搜索查询过滤簇，并按样本数量倒序排列
+  const filteredClusters = clusters
+    .filter(cluster =>
+      searchQuery === '' ||
+      cluster.cluster_id.toString().includes(searchQuery) ||
+      (cluster.name && cluster.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    )
+    .sort((a, b) => b.sample_count - a.sample_count)
 
   if (loading) {
     return (
@@ -163,11 +273,19 @@ export default function Clustering() {
           )}
           {mergeMode ? (
             <>
-              <Button variant="ghost" onClick={() => { setMergeMode(false); setMergeSource(null) }}>
+              <Button variant="ghost" onClick={resetMergeState}>
                 取消
               </Button>
-              <Button variant="accent" disabled={mergeSource === null}>
-                合并选定簇
+              <Button
+                variant="accent"
+                disabled={mergeSource === null || mergeTarget === null}
+                onClick={handleMerge}
+              >
+                {mergeSource === null
+                  ? '选择要合并的簇'
+                  : mergeTarget === null
+                  ? '选择目标簇'
+                  : `合并簇 ${mergeSource} 到 ${mergeTarget}`}
               </Button>
             </>
           ) : (
@@ -226,11 +344,13 @@ export default function Clustering() {
                   {filteredClusters.map((cluster) => (
                     <div
                       key={cluster.cluster_id}
-                      onClick={() => mergeMode ? setMergeSource(cluster.cluster_id) : setSelectedCluster(cluster)}
+                      onClick={() => handleClusterClick(cluster)}
                       className={cn(
                         'p-3 rounded-lg border cursor-pointer transition-all',
                         mergeMode && mergeSource === cluster.cluster_id
                           ? 'border-accent bg-accent/20'
+                          : mergeMode && mergeTarget === cluster.cluster_id
+                          ? 'border-success bg-success/20'
                           : mergeMode
                           ? 'border-background-500 hover:border-background-400 hover:bg-background-300'
                           : 'border-background-500 hover:border-primary-500/50 hover:bg-background-300',
@@ -252,7 +372,7 @@ export default function Clustering() {
                           </div>
                           <div>
                             <p className="font-medium text-gray-100">
-                              {cluster.name || `簇 ${cluster.cluster_id + 1}`}
+                              {cluster.name || getActorName(cluster.samples?.[0]?.character_id) || `簇 ${cluster.cluster_id + 1}`}
                             </p>
                             <p className="text-xs text-gray-500">
                               {cluster.sample_count} 样本 · {cluster.avg_quality?.toFixed(2) || '0.00'} 平均质量
@@ -262,12 +382,17 @@ export default function Clustering() {
                         {mergeMode && (
                           <div
                             className={cn(
-                              'h-5 w-5 rounded-full border-2',
+                              'h-5 w-5 rounded-full border-2 flex items-center justify-center',
                               mergeSource === cluster.cluster_id
                                 ? 'border-accent bg-accent/20'
+                                : mergeTarget === cluster.cluster_id
+                                ? 'border-success bg-success/20'
                                 : 'border-background-500'
                             )}
-                          />
+                          >
+                            {mergeSource === cluster.cluster_id && <span className="text-accent text-xs">1</span>}
+                            {mergeTarget === cluster.cluster_id && <span className="text-success text-xs">2</span>}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -302,7 +427,7 @@ export default function Clustering() {
                     ) : (
                       <>
                         <div>
-                          <CardTitle>{selectedCluster.name || `簇 ${selectedCluster.cluster_id + 1}`}</CardTitle>
+                          <CardTitle>{selectedCluster.name || getActorName(selectedCluster.samples?.[0]?.character_id) || `簇 ${selectedCluster.cluster_id + 1}`}</CardTitle>
                           <p className="text-sm text-gray-500 mt-1">
                             {selectedCluster.first_appearance?.toFixed(1) || '0'}s - {selectedCluster.last_appearance?.toFixed(1) || '0'}s
                           </p>

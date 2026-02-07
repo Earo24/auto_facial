@@ -66,6 +66,15 @@ export interface Character {
   }>;
 }
 
+export interface Series {
+  series_id: string;
+  name: string;
+  year?: number;
+  description?: string;
+  poster_path?: string;
+  created_at: string;
+}
+
 // API 函数
 export const api = {
   // 健康检查
@@ -80,9 +89,12 @@ export const api = {
     return res.json();
   },
 
-  async uploadVideo(file: File): Promise<{ video_id: string; status: string }> {
+  async uploadVideo(file: File, seriesId?: string): Promise<{ video_id: string; status: string }> {
     const formData = new FormData();
     formData.append('file', file);
+    if (seriesId) {
+      formData.append('series_id', seriesId);
+    }
 
     const res = await fetch(`${API_BASE_URL}/videos/upload`, {
       method: 'POST',
@@ -114,6 +126,25 @@ export const api = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ video_id: videoId, name }),
+    });
+    return res.json();
+  },
+
+  async mergeClusters(videoId: string, sourceClusterId: number, targetClusterId: number): Promise<{
+    success: boolean;
+    message?: string;
+    merged_count?: number;
+    target_cluster_id?: number;
+    error?: string;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/clusters/merge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        video_id: videoId,
+        source_cluster_id: sourceClusterId,
+        target_cluster_id: targetClusterId,
+      }),
     });
     return res.json();
   },
@@ -158,9 +189,15 @@ export const api = {
     return res.json();
   },
 
-  async removeSample(sampleId: string): Promise<{ success: boolean }> {
-    const res = await fetch(`${API_BASE_URL}/samples/${sampleId}`, {
-      method: 'DELETE',
+  async removeSample(videoId: string, sampleId: string): Promise<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }> {
+    const res = await fetch(`${API_BASE_URL}/samples/remove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_id: videoId, sample_id: sampleId }),
     });
     return res.json();
   },
@@ -168,6 +205,12 @@ export const api = {
   // 角色相关
   async getCharacters(videoId: string): Promise<{ characters: Character[] }> {
     const res = await fetch(`${API_BASE_URL}/videos/${videoId}/characters`);
+    return res.json();
+  },
+
+  // 剧集相关
+  async getSeries(): Promise<{ series: Series[] }> {
+    const res = await fetch(`${API_BASE_URL}/series`);
     return res.json();
   },
 };

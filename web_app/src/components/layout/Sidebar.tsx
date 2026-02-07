@@ -8,12 +8,14 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Clapperboard,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 const navigation = [
   { name: '仪表板', href: '/', icon: Home },
+  { name: '剧集管理', href: '/series', icon: Clapperboard },
   { name: '视频处理', href: '/processing', icon: Upload },
   { name: '聚类标注', href: '/clustering', icon: Users },
   { name: '识别结果', href: '/recognition', icon: Search },

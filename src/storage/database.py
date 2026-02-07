@@ -52,6 +52,7 @@ class Database:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS videos (
                     video_id TEXT PRIMARY KEY,
+                    series_id TEXT,
                     file_path TEXT NOT NULL,
                     filename TEXT NOT NULL,
                     duration REAL DEFAULT 0,
@@ -63,7 +64,8 @@ class Database:
                     detected_faces INTEGER DEFAULT 0,
                     characters_found INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (series_id) REFERENCES tv_series(series_id) ON DELETE SET NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS frames (
@@ -147,6 +149,42 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_face_samples_cluster ON face_samples(cluster_id);
                 CREATE INDEX IF NOT EXISTS idx_face_samples_character ON face_samples(character_id);
+
+                CREATE TABLE IF NOT EXISTS tv_series (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    series_id TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    year INTEGER,
+                    description TEXT,
+                    poster_path TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS actors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    actor_id TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    photo_path TEXT,
+                    embedding BLOB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS series_actors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    series_id TEXT NOT NULL,
+                    actor_id TEXT NOT NULL,
+                    character_name TEXT NOT NULL,
+                    role_order INTEGER DEFAULT 0,
+                    is_main_character BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (series_id) REFERENCES tv_series(series_id) ON DELETE CASCADE,
+                    FOREIGN KEY (actor_id) REFERENCES actors(actor_id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_series_actors_series ON series_actors(series_id);
+                CREATE INDEX IF NOT EXISTS idx_series_actors_actor ON series_actors(actor_id);
                 CREATE INDEX IF NOT EXISTS idx_recognition_video ON recognition_results(video_id);
                 CREATE INDEX IF NOT EXISTS idx_recognition_character ON recognition_results(character_id);
             """)
@@ -400,6 +438,17 @@ class Database:
                 WHERE sample_id = ?
             """, (cluster_id, sample_id))
 
+    def clear_video_clusters(self, video_id: str):
+        """清除视频的所有聚类标注"""
+        logger.info(f"清除视频 {video_id} 的所有聚类标注")
+        with self.get_connection() as conn:
+            result = conn.execute("""
+                UPDATE face_samples
+                SET cluster_id = NULL
+                WHERE video_id = ?
+            """, (video_id,))
+            logger.info(f"已清除 {result.rowcount} 个样本的聚类标注")
+
     def get_cluster_summary(self, video_id: str) -> List[Dict]:
         """获取聚类摘要"""
         with self.get_connection() as conn:
@@ -452,3 +501,169 @@ class Database:
             conn.execute("DELETE FROM frames WHERE video_id = ?", (video_id,))
             conn.execute("DELETE FROM characters WHERE video_id = ?", (video_id,))
             conn.execute("DELETE FROM videos WHERE video_id = ?", (video_id,))
+
+    def update_video_series(self, video_id: str, series_id: str) -> bool:
+        """更新视频所属电视剧"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("""
+                    UPDATE videos SET series_id = ? WHERE video_id = ?
+                """, (series_id, video_id))
+            logger.info(f"更新视频 {video_id} 所属电视剧为 {series_id}")
+            return True
+        except Exception as e:
+            logger.error(f"更新视频电视剧失败: {e}")
+            return False
+
+    # ========== 电视剧管理 ==========
+
+    def create_tv_series(self, series_id: str, name: str, year: int = None,
+                        description: str = None, poster_path: str = None) -> bool:
+        """创建电视剧"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO tv_series (series_id, name, year, description, poster_path)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (series_id, name, year, description, poster_path))
+            logger.info(f"创建电视剧: {series_id} - {name}")
+            return True
+        except Exception as e:
+            logger.error(f"创建电视剧失败: {e}")
+            return False
+
+    def get_tv_series(self, series_id: str = None) -> List[Dict]:
+        """获取电视剧列表"""
+        with self.get_connection() as conn:
+            if series_id:
+                rows = conn.execute("""
+                    SELECT * FROM tv_series WHERE series_id = ?
+                """, (series_id,)).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM tv_series ORDER BY created_at DESC").fetchall()
+
+            return [dict(row) for row in rows]
+
+    def delete_tv_series(self, series_id: str) -> bool:
+        """删除电视剧"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("DELETE FROM tv_series WHERE series_id = ?", (series_id,))
+            logger.info(f"删除电视剧: {series_id}")
+            return True
+        except Exception as e:
+            logger.error(f"删除电视剧失败: {e}")
+            return False
+
+    # ========== 演员管理 ==========
+
+    def create_actor(self, actor_id: str, name: str, photo_path: str = None,
+                    embedding: np.ndarray = None) -> bool:
+        """创建演员"""
+        try:
+            embedding_blob = embedding.tobytes() if embedding is not None else None
+            with self.get_connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO actors (actor_id, name, photo_path, embedding)
+                    VALUES (?, ?, ?, ?)
+                """, (actor_id, name, photo_path, embedding_blob))
+            logger.info(f"创建演员: {actor_id} - {name}")
+            return True
+        except Exception as e:
+            logger.error(f"创建演员失败: {e}")
+            return False
+
+    def get_actors(self, actor_id: str = None) -> List[Dict]:
+        """获取演员列表"""
+        with self.get_connection() as conn:
+            if actor_id:
+                rows = conn.execute("""
+                    SELECT * FROM actors WHERE actor_id = ?
+                """, (actor_id,)).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM actors ORDER BY name").fetchall()
+
+            return [dict(row) for row in rows]
+
+    def update_actor_embedding(self, actor_id: str, embedding: np.ndarray) -> bool:
+        """更新演员人脸embedding"""
+        try:
+            embedding_blob = embedding.tobytes()
+            with self.get_connection() as conn:
+                conn.execute("""
+                    UPDATE actors SET embedding = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE actor_id = ?
+                """, (embedding_blob, actor_id))
+            logger.info(f"更新演员embedding: {actor_id}")
+            return True
+        except Exception as e:
+            logger.error(f"更新演员embedding失败: {e}")
+            return False
+
+    def delete_actor(self, actor_id: str) -> bool:
+        """删除演员"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("DELETE FROM actors WHERE actor_id = ?", (actor_id,))
+            logger.info(f"删除演员: {actor_id}")
+            return True
+        except Exception as e:
+            logger.error(f"删除演员失败: {e}")
+            return False
+
+    # ========== 电视剧演员关联管理 ==========
+
+    def add_series_actor(self, series_id: str, actor_id: str, character_name: str,
+                        role_order: int = 0, is_main_character: bool = True) -> bool:
+        """添加电视剧演员关联"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO series_actors
+                    (series_id, actor_id, character_name, role_order, is_main_character)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (series_id, actor_id, character_name, role_order, is_main_character))
+            logger.info(f"添加电视剧演员: {series_id} - {actor_id} 饰演 {character_name}")
+            return True
+        except Exception as e:
+            logger.error(f"添加电视剧演员失败: {e}")
+            return False
+
+    def get_series_actors(self, series_id: str) -> List[Dict]:
+        """获取电视剧的演员列表"""
+        with self.get_connection() as conn:
+            rows = conn.execute("""
+                SELECT sa.*, a.name as actor_name, a.photo_path
+                FROM series_actors sa
+                LEFT JOIN actors a ON sa.actor_id = a.actor_id
+                WHERE sa.series_id = ?
+                ORDER BY sa.role_order, sa.id
+            """, (series_id,)).fetchall()
+
+            return [dict(row) for row in rows]
+
+    def remove_series_actor(self, series_id: str, actor_id: str) -> bool:
+        """移除电视剧演员"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute("""
+                    DELETE FROM series_actors
+                    WHERE series_id = ? AND actor_id = ?
+                """, (series_id, actor_id))
+            logger.info(f"移除电视剧演员: {series_id} - {actor_id}")
+            return True
+        except Exception as e:
+            logger.error(f"移除电视剧演员失败: {e}")
+            return False
+
+    def get_actor_embedding(self, actor_id: str) -> Optional[np.ndarray]:
+        """获取演员的人脸embedding"""
+        with self.get_connection() as conn:
+            row = conn.execute("""
+                SELECT embedding FROM actors WHERE actor_id = ?
+            """, (actor_id,)).fetchone()
+
+            if row and row['embedding']:
+                return np.frombuffer(row['embedding'], dtype=np.float32)
+            return None
+
