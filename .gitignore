@@ -67,3 +67,4 @@ Thumbs.db
 *.mkv
 movies/
 *.jsonl
+HITL/*.json
