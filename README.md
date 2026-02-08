@@ -90,11 +90,13 @@ source venv/bin/activate
 #### 3. 安装 Python 依赖
 
 **通用 CPU 模式**（兼容所有平台）
+
 ```bash
 pip install -r requirements.txt
 ```
 
 **NVIDIA GPU 模式**（Linux/Windows，推荐）
+
 ```bash
 # 检查 CUDA 是否可用
 nvidia-smi
@@ -104,6 +106,7 @@ pip install -r requirements-gpu.txt
 ```
 
 **Apple Silicon 模式**（maccos M1/M2/M3/M4）
+
 ```bash
 # 使用标准依赖即可，系统会自动检测并启用 CoreML 加速
 pip install -r requirements.txt
@@ -114,6 +117,7 @@ python -c "import onnxruntime; print('Available providers:', onnxruntime.get_ava
 ```
 
 > **注意**：
+>
 > - 首次运行时，InsightFace 会自动下载所需模型（约 200MB）到 `~/.insightface/models/` 目录
 > - NVIDIA GPU 模式需要正确安装 NVIDIA 驱动和 CUDA，详见 [CUDA 安装指南](https://developer.nvidia.com/cuda-downloads)
 > - Apple Silicon 用户使用标准依赖即可，CoreML 加速会自动启用
@@ -133,29 +137,21 @@ cd ..
 
 ### 系统仪表板
 
-![仪表板](screenshots/dashboard.png)
-
 仪表板提供全局数据概览，包括视频统计、角色统计、识别统计和处理状态。
 
-### 视频处理
-
-![视频处理](screenshots/video-processing.png)
-
-上传视频后自动进行帧提取和人脸检测，实时显示处理进度和检测到的人脸数量。
-
-### 聚类标注
-
-![聚类标注](screenshots/clustering.png)
-
-智能聚类自动发现角色，支持手动调整、合并簇和演员匹配，直观的可视化界面。
+![仪表板](screenshots/dashboard.png)
 
 ### 剧集管理
 
-![剧集管理](screenshots/series-management.png)
-
 统一管理剧集信息和演员库，支持批量导入演员照片和角色关联。
 
----
+![视频处理](screenshots/video-processing.png)
+
+### 聚类标注
+
+智能聚类自动发现角色，支持手动调整、合并簇和演员匹配，直观的可视化界面。
+
+![剧集管理](screenshots/series-management.png)
 
 ## 运行项目
 
@@ -279,6 +275,7 @@ DATABASE_PATH = DATA_ROOT / "auto_facial.db"  # 数据库文件路径
 ### 数据库概述
 
 项目使用 **SQLite** 作为数据库，具有以下优势：
+
 - **轻量级**：无需额外安装数据库服务
 - **便携**：单个文件存储所有数据
 - **高性能**：适合中小规模应用
@@ -293,31 +290,34 @@ DATABASE_PATH = DATA_ROOT / "auto_facial.db"  # 数据库文件路径
 ### 自动初始化
 
 数据库会在以下时机自动初始化：
+
 - **首次启动 API 服务器**时（`python api_server.py`）
 - **首次执行命令行脚本**时
 
 初始化过程包括：
+
 1. 创建数据库文件（如果不存在）
 2. 创建所有必需的表结构
 3. 创建索引以优化查询性能
 
 ### 数据表结构
 
-| 表名 | 说明 | 主要字段 |
-|------|------|----------|
-| `tv_series` | 剧集信息 | series_id, name, year, description, poster_path |
-| `videos` | 视频信息 | video_id, series_id, file_path, duration, fps, total_frames |
-| `frames` | 视频帧 | frame_id, video_id, frame_number, timestamp, image_path |
-| `face_samples` | 人脸样本 | sample_id, frame_id, embedding, bbox, cluster_id, character_id |
-| `characters` | 角色信息 | character_id, video_id, name, recognition_threshold |
-| `character_prototypes` | 角色原型 | character_id, embedding, image_path |
-| `actors` | 演员信息 | actor_id, name, photo_path, embedding |
-| `series_actors` | 剧集-演员关联 | series_id, actor_id, character_name, role_order |
-| `recognition_results` | 识别结果 | video_id, frame_id, character_id, confidence |
+| 表名                     | 说明          | 主要字段                                                       |
+| ------------------------ | ------------- | -------------------------------------------------------------- |
+| `tv_series`            | 剧集信息      | series_id, name, year, description, poster_path                |
+| `videos`               | 视频信息      | video_id, series_id, file_path, duration, fps, total_frames    |
+| `frames`               | 视频帧        | frame_id, video_id, frame_number, timestamp, image_path        |
+| `face_samples`         | 人脸样本      | sample_id, frame_id, embedding, bbox, cluster_id, character_id |
+| `characters`           | 角色信息      | character_id, video_id, name, recognition_threshold            |
+| `character_prototypes` | 角色原型      | character_id, embedding, image_path                            |
+| `actors`               | 演员信息      | actor_id, name, photo_path, embedding                          |
+| `series_actors`        | 剧集-演员关联 | series_id, actor_id, character_name, role_order                |
+| `recognition_results`  | 识别结果      | video_id, frame_id, character_id, confidence                   |
 
 ### 数据管理
 
 #### 备份数据库
+
 ```bash
 # 备份整个数据目录
 cp -r data data_backup_$(date +%Y%m%d)
@@ -327,6 +327,7 @@ cp data/auto_facial.db data/auto_facial_backup_$(date +%Y%m%d).db
 ```
 
 #### 重置数据库
+
 ```bash
 # 停止服务后删除数据库文件
 rm data/auto_facial.db
@@ -336,6 +337,7 @@ python api_server.py
 ```
 
 #### 查看数据库内容
+
 ```bash
 # 使用 SQLite 命令行工具
 sqlite3 data/auto_facial.db
@@ -350,6 +352,7 @@ SELECT * FROM videos;  # 查询数据
 ### 数据迁移
 
 如需迁移到其他数据库（如 PostgreSQL、MySQL）：
+
 1. 导出数据：`sqlite3 data/auto_facial.db .dump > dump.sql`
 2. 修改 `src/storage/database.py` 中的数据库连接配置
 3. 导入数据到目标数据库
@@ -360,14 +363,14 @@ SELECT * FROM videos;  # 查询数据
 
 ### 后端
 
-| 组件       | 技术                         | 说明                     |
-| ---------- | ---------------------------- | ------------------------ |
-| 人脸检测   | InsightFace (RetinaFace)     | 高精度人脸检测           |
-| 特征提取   | InsightFace (ArcFace)        | 512 维特征向量           |
-| 聚类算法   | DBSCAN + Agglomerative       | 三阶段聚类策略           |
-| 推理引擎   | ONNX Runtime                 | 支持 CPU/GPU (CUDA + CoreML) 加速 |
-| API 框架   | FastAPI                      | 高性能异步 API           |
-| 数据库     | SQLite + SQLAlchemy          | 轻量级数据持久化         |
+| 组件     | 技术                     | 说明                              |
+| -------- | ------------------------ | --------------------------------- |
+| 人脸检测 | InsightFace (RetinaFace) | 高精度人脸检测                    |
+| 特征提取 | InsightFace (ArcFace)    | 512 维特征向量                    |
+| 聚类算法 | DBSCAN + Agglomerative   | 三阶段聚类策略                    |
+| 推理引擎 | ONNX Runtime             | 支持 CPU/GPU (CUDA + CoreML) 加速 |
+| API 框架 | FastAPI                  | 高性能异步 API                    |
+| 数据库   | SQLite + SQLAlchemy      | 轻量级数据持久化                  |
 
 ### 前端
 
@@ -438,12 +441,14 @@ A: 可以在配置中减少 `VIDEO_CONFIG["max_frames"]` 或处理较短的视�
 A: 根据你的硬件选择对应方式：
 
 **NVIDIA GPU（Linux/Windows）**：
+
 1. 确保有 NVIDIA GPU（计算能力 7.0+）
 2. 安装 CUDA 11.4+ 和 cuDNN 8.2+
 3. 运行 `pip install -r requirements-gpu.txt`
 4. 在 `config/settings.py` 中设置 `MODEL_CONFIG['use_gpu'] = True`
 
 **Apple Silicon（M1/M2/M3/M4）**：
+
 1. 使用标准依赖：`pip install -r requirements.txt`
 2. 确保系统为 macOS 12.0+ (Monterey 或更高)
 3. 系统会自动检测并启用 CoreML 加速
@@ -452,14 +457,17 @@ A: 根据你的硬件选择对应方式：
 ### Q: Apple Silicon 如何确认 CoreML 已启用？
 
 A: 运行以下命令检查：
+
 ```bash
 python -c "import onnxruntime; print('Available providers:', onnxruntime.get_available_providers())"
 ```
+
 如果输出包含 `CoreMLExecutionProvider`，说明已启用。启动项目时查看日志，会显示「Using CoreML GPU acceleration for M2 chip」。
 
 ### Q: GPU 模式报错怎么办？
 
 A: 常见原因：
+
 - **NVIDIA GPU**：
   - CUDA 版本不匹配：运行 `nvidia-smi` 检查 CUDA 版本
   - 显存不足：减少 `VIDEO_CONFIG["max_frames"]` 或使用 CPU 模式
@@ -472,6 +480,7 @@ A: 常见原因：
 ### Q: 数据库存储在哪里？如何清空？
 
 A: 数据库文件位于 `./data/auto_facial.db`。清空数据库：
+
 ```bash
 # 停止服务后
 rm data/auto_facial.db
@@ -483,6 +492,7 @@ python api_server.py
 ### Q: 如何备份数据？
 
 A: 推荐备份整个 `data` 目录：
+
 ```bash
 # 备份
 cp -r data data_backup_$(date +%Y%m%d)
@@ -494,6 +504,7 @@ cp -r data_backup_20240101/* data/
 ### Q: 数据库损坏怎么办？
 
 A: 如果数据库文件损坏，可以：
+
 1. 删除损坏的数据库文件：`rm data/auto_facial.db`
 2. 重新启动服务，系统会自动重新初始化
 3. 注意：这会清空所有数据，请定期备份
