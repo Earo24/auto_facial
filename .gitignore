@@ -68,3 +68,5 @@ Thumbs.db
 movies/
 *.jsonl
 HITL/*.json
+demo_video.mp4
+*.mov
